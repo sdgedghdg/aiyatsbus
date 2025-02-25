@@ -3,11 +3,11 @@
 # certain platforms or Java versions, and provides a first line of defence
 # against bad commits.
 
-name: AQQBot Gradle Build (Refactor Branch)
+name: aiyatsbus
 on:
   push:
     branches:
-      - refactor
+      - dev/1.21
 
 jobs:
   build:
@@ -25,7 +25,7 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '8'
+          java-version: '21'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build
@@ -33,12 +33,12 @@ jobs:
       - name: capture build artifacts (spigot)
         uses: actions/upload-artifact@v4.6.0
         with:
-          name: AQQBot for Spigot
+          name: aiyatsbus
           path: |
             bukkit/build/libs/
       - name: capture build artifacts (velocity)
         uses: actions/upload-artifact@v4.6.0
         with:
-          name: AQQBot for Velocity
+          name: aiyatsbus
           path: |
             velocity/build/libs/
