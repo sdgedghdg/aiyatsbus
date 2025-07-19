@@ -32,12 +32,15 @@ import org.bukkit.craftbukkit.enchantments.CraftEnchantment
  */
 object EnchantmentHelper {
 
-    fun createCraftEnchantment(holder: Holder<Enchantment>): CraftEnchantment {
-        return CraftEnchantment(holder)
+    fun createCraftEnchantment(nms: Holder<Enchantment>): Any {
+        return CraftEnchantment(nms)
+    }
+
+    fun createVanillaCraftEnchantment(enchant: AiyatsbusEnchantmentBase, nms: Holder<Enchantment>): Any {
+        return VanillaCraftEnchantment(enchant, nms)
     }
 
     fun createAiyatsbusCraftEnchantment(enchant: AiyatsbusEnchantmentBase, nms: Holder<Enchantment>): Any {
         return AiyatsbusCraftEnchantment(enchant, nms)
     }
-
 }

@@ -19,7 +19,11 @@
 package cc.polarastrum.aiyatsbus.impl
 
 import cc.polarastrum.aiyatsbus.core.*
+import cc.polarastrum.aiyatsbus.core.data.registry.Rarity
 import cc.polarastrum.aiyatsbus.core.util.*
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.TextDecoration
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import org.bukkit.GameMode
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -30,14 +34,16 @@ import org.bukkit.persistence.PersistentDataType
 import taboolib.common.LifeCycle
 import taboolib.common.platform.Awake
 import taboolib.common.platform.PlatformFactory
-import taboolib.module.chat.Source
+import taboolib.common.platform.function.console
 import taboolib.module.chat.component
 import taboolib.module.configuration.Config
 import taboolib.module.configuration.ConfigNode
 import taboolib.module.configuration.Configuration
 import taboolib.module.configuration.conversion
+import taboolib.module.nms.MinecraftVersion
 import taboolib.platform.util.modifyMeta
 import taboolib.platform.util.onlinePlayers
+import kotlin.system.measureTimeMillis
 
 /**
  * Aiyatsbus
@@ -126,8 +132,8 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
             }
             // 注意, 附魔书对应的隐藏附魔 flag 是 HIDE POTION EFFECTS 而不是 HIDE ENCHANTS (1.18- 是这样, 1.19+ 未知)
             if (item.isEnchantedBook)
-                if (Aiyatsbus.api().getMinecraftAPI().isBookEnchantsHidden(this)) return@modifyMeta
-                else Aiyatsbus.api().getMinecraftAPI().hideBookEnchants(this)
+                if (isBookEnchantsHidden(this)) return@modifyMeta
+                else hideBookEnchants(this)
             else
                 if (hasItemFlag(ItemFlag.HIDE_ENCHANTS)) return@modifyMeta
                 else addItemFlags(ItemFlag.HIDE_ENCHANTS)
@@ -137,20 +143,23 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
             // 生成附魔展示 Lore
             val generatedLore = generateLore(item, player)
             // 物品的原始 Lore
-            val originLore = lore ?: emptyList()
+            val originLore = lore() ?: emptyList()
             // 获取附魔显示格式
             val loreFormation =
                 if (originLore.isNotEmpty()) settings.hasLoreFormation else settings.withoutLoreFormation
             // 处理最终 Lore
-            val result = buildList<String> {
+            val result = buildList<Component> {
                 loreFormation.forEach { line ->
                     when (line) {
-                        "{enchant_lore}" -> addAll(generatedLore.toBuiltComponent().map(Source::toLegacyText))
+                        "{enchant_lore}" -> addAll(
+                            generatedLore.toBuiltComponent().map { componentFromRaw(it.toRawMessage()) })
                         "{capability_line}" ->
                             add(
-                                settings.capabilityLine
-                                    .replace("capability" to item.type.capability - item.fixedEnchants.size)
-                                    .component().buildColored().toLegacyText()
+                                componentFromRaw(
+                                    settings.capabilityLine
+                                        .replace("capability" to item.type.capability - item.fixedEnchants.size)
+                                        .component().buildColored().toRawMessage()
+                                )
                             )
                         "{item_lore}" -> {
                             // 如果是插入物品原 Lore 就在插入前后记录索引
@@ -158,17 +167,17 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
                             addAll(originLore)
                             lastIndex = size
                         }
-                        else -> add(line.component().buildColored().toLegacyText())
+                        else -> add(componentFromRaw(line.component().buildColored().toRawMessage()))
                     }
                 }
             }
             // 设置显示 Lore
-            lore = result
+            lore(result)
             if (item.type == Material.ENCHANTED_BOOK && !hasCustomModelData()) {
                 val rarity = item.fixedEnchants.minBy { it.key.rarity.weight }.key.rarity
                 if (rarity.isCustomModelBookEnabled) {
                     setCustomModelData(rarity.customModelBook)
-                    this["custom_book", PersistentDataType.BOOLEAN] = true // 记录这物品被打上了自定义模型
+                    this["custom_book", PersistentDataType.STRING] = "true" // 记录这物品被打上了自定义模型
                 }
             }
             this["lore_index", PersistentDataType.INTEGER_ARRAY] = intArrayOf(firstIndex, lastIndex)
@@ -192,10 +201,11 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
                 return@modifyMeta
             }
             removeItemFlags(ItemFlag.HIDE_ENCHANTS)
-            if (item.isEnchantedBook) Aiyatsbus.api().getMinecraftAPI().removeBookEnchantsHidden(this)
+            if (item.isEnchantedBook) removeBookEnchantsHidden(this)
 
             // 清理掉打上的自定义模型
-            val custom = this["custom_book", PersistentDataType.BOOLEAN] == true
+            // TODO: 不清楚会不会有清理掉物品原模型数据的 Bug, 后期需要再看看这一块的逻辑
+            val custom = this["custom_book", PersistentDataType.STRING] == "true"
             if (custom) setCustomModelData(null)
 
             // 创造模式的额外处理，需要重新给物品附魔
@@ -211,11 +221,39 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
             }
             // 除去 enchant lore
             val (first, last) = loreIndex
-            lore = lore!!.subList(first, last)
+            lore(lore()!!.subList(first, last))
             remove("enchants_serialized")
             remove("lore_index")
             remove("custom_book")
         }
+    }
+
+    /**
+     * Spigot: ItemFlag.HIDE_ADDITIONAL_TOOLTIP
+     */
+    private fun hideBookEnchants(item: ItemMeta) {
+        item.addItemFlags(
+            if (MinecraftVersion.versionId >= 12005) ItemFlag.valueOf("HIDE_STORED_ENCHANTS")
+            else ItemFlag.HIDE_POTION_EFFECTS
+        )
+    }
+
+    private fun isBookEnchantsHidden(item: ItemMeta): Boolean {
+        return item.hasItemFlag(
+            if (MinecraftVersion.versionId >= 12005) ItemFlag.valueOf("HIDE_STORED_ENCHANTS")
+            else ItemFlag.HIDE_POTION_EFFECTS
+        )
+    }
+
+    private fun removeBookEnchantsHidden(item: ItemMeta) {
+        item.removeItemFlags(
+            if (MinecraftVersion.versionId >= 12005) ItemFlag.valueOf("HIDE_STORED_ENCHANTS")
+            else ItemFlag.HIDE_POTION_EFFECTS
+        )
+    }
+
+    private fun componentFromRaw(raw: String) : Component {
+        return GsonComponentSerializer.gson().deserialize(raw).decoration(TextDecoration.ITALIC, false)
     }
 
     companion object {
@@ -249,7 +287,7 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
 
         @delegate:ConfigNode("sort.rarity.order")
         override val rarityOrder by conversion<List<String>, List<String>> {
-            toMutableList().also { it += aiyatsbusRarities.keys.filterNot(this::contains) }
+            toMutableList().also { it += Rarity.keys.filterNot(this::contains) }
         }
 
         @ConfigNode("combine.enable")
@@ -276,7 +314,8 @@ class DefaultAiyatsbusDisplayManager : AiyatsbusDisplayManager {
         @Awake(LifeCycle.ENABLE)
         fun init() {
             conf.onReload {
-                onlinePlayers.forEach(Player::updateInventory)
+                measureTimeMillis { onlinePlayers.forEach(Player::updateInventory) }
+                    .let { console().sendLang("configuration-reload", conf.file!!.name, it) }
             }
         }
     }

@@ -33,9 +33,12 @@ import org.bukkit.event.enchantment.EnchantItemEvent
 import org.bukkit.event.enchantment.PrepareItemEnchantEvent
 import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
+import taboolib.common.LifeCycle
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
+import taboolib.common.platform.function.console
 import taboolib.common.platform.function.info
+import taboolib.common.platform.function.registerLifeCycleTask
 import taboolib.common.platform.function.submit
 import taboolib.common.util.randomDouble
 import taboolib.common5.RandomList
@@ -119,6 +122,14 @@ object EnchantingTableSupport {
 
     @ConfigNode("max_level_limit")
     var maxLevelLimit = -1
+
+    init {
+        registerLifeCycleTask(LifeCycle.ENABLE) {
+            conf.onReload {
+                console().sendLang("configuration-reload", conf.file!!.name, 0)
+            }
+        }
+    }
 
     @SubscribeEvent(priority = EventPriority.MONITOR)
     fun e(e: PacketSendEvent) {
@@ -233,7 +244,7 @@ object EnchantingTableSupport {
 
         // 对书的附魔，必须手动进行，因为原版处理会掉特殊附魔
         // 也许可以用更好的方法兼容，submit 有一定风险 FIXME
-        if (item.type == Material.BOOK) {
+        if (item.type == Material.ENCHANTED_BOOK) {
             submit {
                 event.inventory.setItem(0, result.second)
             }

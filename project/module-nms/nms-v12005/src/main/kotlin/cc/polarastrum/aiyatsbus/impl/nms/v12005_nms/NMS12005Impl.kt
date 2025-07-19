@@ -17,18 +17,14 @@
 package cc.polarastrum.aiyatsbus.impl.nms.v12005_nms
 
 import cc.polarastrum.aiyatsbus.core.toDisplayMode
-import cc.polarastrum.aiyatsbus.impl.nms.v12005_nms.NMS12005
 import cc.polarastrum.aiyatsbus.core.util.isNull
 import net.minecraft.core.component.DataComponents
-import net.minecraft.world.item.trading.MerchantRecipe
 import net.minecraft.world.item.trading.MerchantRecipeList
 import org.bukkit.craftbukkit.v1_20_R4.entity.CraftLivingEntity
 import org.bukkit.craftbukkit.v1_20_R4.inventory.CraftItemStack
 import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Player
-import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
-import org.bukkit.inventory.meta.ItemMeta
 import taboolib.library.reflex.Reflex.Companion.setProperty
 import java.util.Optional
 import kotlin.jvm.optionals.getOrNull
@@ -50,7 +46,7 @@ class NMS12005Impl : NMS12005() {
         (CraftItemStack.asNMSCopy(item) as NMSItemStack)[DataComponents.REPAIR_COST] = cost
     }
 
-    override fun adaptMerchantRecipe(merchantRecipeList: Any, player: Player): Any {
+    override fun adaptMerchantRecipe(merchantRecipeList: Any, player: Player) {
 
         fun adapt(item: Any, player: Player): Any {
             val bkItem = CraftItemStack.asBukkitCopy(item as NMSItemStack)
@@ -59,40 +55,17 @@ class NMS12005Impl : NMS12005() {
         }
 
         val previous = merchantRecipeList as MerchantRecipeList
-        val adapt = MerchantRecipeList()
         for (i in 0 until previous.size) {
-            val recipe = previous[i]!!
-            val baseCostA = recipe.baseCostA.also { it.setProperty("itemStack", adapt(it.itemStack, player)) }
-            val costB = Optional.ofNullable(recipe.costB.getOrNull()?.also { it.setProperty("itemStack", adapt(it.itemStack, player)) })
-            adapt += MerchantRecipe(
-                baseCostA,
-                costB,
-                adapt(recipe.result, player) as NMSItemStack,
-                recipe.uses,
-                recipe.maxUses,
-                recipe.xp,
-                recipe.priceMultiplier,
-                recipe.demand
-            )
+            with(previous[i]!!) {
+                baseCostA.setProperty("itemStack", adapt(baseCostA.itemStack, player))
+                setProperty("costB", Optional.ofNullable(costB.getOrNull()?.also { it.setProperty("itemStack", adapt(it.itemStack, player)) }))
+                setProperty("result", adapt(result, player) as NMSItemStack)
+            }
         }
-        return adapt
     }
 
     override fun hurtAndBreak(nmsItem: Any, amount: Int, entity: LivingEntity) {
         return (nmsItem as NMSItemStack).hurtAndBreak(amount, (entity as CraftLivingEntity).handle, null)
-    }
-
-    override fun hideBookEnchants(item: ItemMeta) {
-        item.addItemFlags(ItemFlag.HIDE_STORED_ENCHANTS)
-        // Spigot: ItemFlag.HIDE_ADDITIONAL_TOOLTIP
-    }
-
-    override fun isBookEnchantsHidden(item: ItemMeta): Boolean {
-        return item.hasItemFlag(ItemFlag.HIDE_STORED_ENCHANTS)
-    }
-
-    override fun removeBookEnchantsHidden(item: ItemMeta) {
-        item.removeItemFlags(ItemFlag.HIDE_STORED_ENCHANTS)
     }
 }
 

@@ -25,6 +25,7 @@ import cc.polarastrum.aiyatsbus.core.registration.modern.ModernEnchantmentRegist
 import cc.polarastrum.aiyatsbus.core.util.setStaticFinal
 import cc.polarastrum.aiyatsbus.impl.registration.v12004_paper.AiyatsbusCraftEnchantment
 import cc.polarastrum.aiyatsbus.impl.registration.v12004_paper.VanillaAiyatsbusEnchantment
+import cc.polarastrum.aiyatsbus.impl.registration.v12004_paper.VanillaCraftEnchantment
 import net.minecraft.core.Holder
 import net.minecraft.core.IRegistry
 import net.minecraft.core.IRegistryCustom
@@ -77,6 +78,15 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
         .map { CraftNamespacedKey.fromMinecraft(it) }
         .toSet()
 
+    override fun unfreezeRegistry() {
+        frozenField.set(BuiltInRegistries.ENCHANTMENT, false)
+        unregisteredIntrusiveHoldersField.set(
+            BuiltInRegistries.ENCHANTMENT,
+            IdentityHashMap<net.minecraft.world.item.enchantment.Enchantment,
+                    Holder.c<net.minecraft.world.item.enchantment.Enchantment>>()
+        )
+    }
+
     override fun replaceRegistry() {
         val server = Bukkit.getServer() as CraftServer
         val api = PlatformFactory.getAPI<AiyatsbusEnchantmentManager>()
@@ -90,10 +100,10 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
             val isVanilla = vanillaEnchantments.contains(key)
             val aiyatsbus = api.getEnchant(key)
 
-            if (isVanilla) {
-                CraftEnchantment(key, registry)
-            } else if (aiyatsbus != null) {
+            if (aiyatsbus != null) {
                 aiyatsbus as Enchantment
+            } else if (isVanilla) {
+                CraftEnchantment(key, registry)
             } else null
         }
 
@@ -106,19 +116,21 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
             .setStaticFinal(registry)
 
         // Unfreeze NMS registry
-        frozenField.set(BuiltInRegistries.ENCHANTMENT, false)
-        unregisteredIntrusiveHoldersField.set(
-            BuiltInRegistries.ENCHANTMENT,
-            IdentityHashMap<net.minecraft.world.item.enchantment.Enchantment,
-                    Holder.c<net.minecraft.world.item.enchantment.Enchantment>>()
-        )
+        unfreezeRegistry()
+    }
+
+    override fun freezeRegistry() {
     }
 
     override fun register(enchant: AiyatsbusEnchantmentBase): Enchantment {
         if (BuiltInRegistries.ENCHANTMENT.containsKey(CraftNamespacedKey.toMinecraft(enchant.enchantmentKey))) {
             val nms = BuiltInRegistries.ENCHANTMENT[CraftNamespacedKey.toMinecraft(enchant.enchantmentKey)]
             if (nms != null) {
-                 return AiyatsbusCraftEnchantment(enchant, nms)
+                 return if (enchant.alternativeData.isVanilla) {
+                     VanillaCraftEnchantment(enchant, nms)
+                 } else {
+                     AiyatsbusCraftEnchantment(enchant, nms)
+                 }
             } else {
                 throw IllegalStateException("Enchantment ${enchant.id} wasn't registered")
             }

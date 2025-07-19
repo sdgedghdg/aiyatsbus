@@ -6,16 +6,17 @@
 basic:
   id: efficiency
   name: "效率"
-  max_level: 5
+  max-level: 5
 
 alternative:
-  is_vanilla: true
+  is-vanilla: true
 
 rarity: 罕见
 targets:
   - 斧
   - 镐
   - 铲
+  - 锄
   - 剪刀
 
 display:

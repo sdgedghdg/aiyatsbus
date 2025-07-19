@@ -18,7 +18,6 @@
  */
 package cc.polarastrum.aiyatsbus.impl.registration.v12100_nms
 
-import cc.polarastrum.aiyatsbus.core.Aiyatsbus
 import cc.polarastrum.aiyatsbus.core.AiyatsbusEnchantment
 import cc.polarastrum.aiyatsbus.core.AiyatsbusEnchantmentBase
 import cc.polarastrum.aiyatsbus.core.AiyatsbusEnchantmentManager
@@ -34,6 +33,7 @@ import org.bukkit.NamespacedKey
 import org.bukkit.craftbukkit.v1_21_R1.CraftRegistry
 import org.bukkit.craftbukkit.v1_21_R1.CraftServer
 import org.bukkit.craftbukkit.v1_21_R1.enchantments.CraftEnchantment
+import org.bukkit.craftbukkit.v1_21_R1.util.CraftChatMessage
 import org.bukkit.craftbukkit.v1_21_R1.util.CraftNamespacedKey
 import org.bukkit.enchantments.Enchantment
 import taboolib.common.platform.PlatformFactory
@@ -78,19 +78,25 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
         .getDeclaredField("cache")
         .apply { isAccessible = true }
 
+    override fun unfreezeRegistry() {
+        frozenField.set(enchantmentRegistry, false)
+        unregisteredIntrusiveHoldersField.set(enchantmentRegistry, IdentityHashMap<NMSEnchantment, Holder.c<NMSEnchantment>>())
+    }
+
     override fun replaceRegistry() {
         val api = PlatformFactory.getAPI<AiyatsbusEnchantmentManager>()
 
         val newRegistryMTB =
-            BiFunction<NamespacedKey, NMSEnchantment, Enchantment> { key, registry ->
-                val isVanilla = enchantmentRegistry.containsKey(CraftNamespacedKey.toMinecraft(key))
+            BiFunction<NamespacedKey, NMSEnchantment, Enchantment?> { key, registry ->
                 val aiyatsbus = api.getEnchant(key)
 
-                if (isVanilla) {
-                    CraftEnchantment(key, registry)
-                } else if (aiyatsbus != null) {
+                if (aiyatsbus != null) {
                     aiyatsbus as Enchantment
-                } else null
+                } else {
+                    // 此时若获取不到则一定是获取原版附魔
+                    // 此时获取更多附魔返回值应当为 null
+                    EnchantmentHelper.createCraftEnchantment(key, enchantmentRegistry.get(CraftNamespacedKey.toMinecraft(key))) as CraftEnchantment
+                }
             }
 
         // Update bukkit registry
@@ -101,8 +107,10 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
         cache.set(bukkitRegistry, mutableMapOf<NamespacedKey, Enchantment>())
 
         // Unfreeze NMS registry
-        frozenField.set(enchantmentRegistry, false)
-        unregisteredIntrusiveHoldersField.set(enchantmentRegistry, IdentityHashMap<NMSEnchantment, Holder.c<NMSEnchantment>>())
+        unfreezeRegistry()
+    }
+
+    override fun freezeRegistry() {
     }
 
     override fun register(enchant: AiyatsbusEnchantmentBase): Enchantment {
@@ -113,7 +121,11 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
             val nms = enchantmentRegistry[CraftNamespacedKey.toMinecraft(enchant.enchantmentKey)]
 
             if (nms != null) {
-                 return EnchantmentHelper.createCraftEnchantment(enchant, nms) as CraftEnchantment
+                return (if (enchant.alternativeData.isVanilla) {
+                    EnchantmentHelper.createVanillaCraftEnchantment(enchant, nms)
+                } else {
+                    EnchantmentHelper.createAiyatsbusCraftEnchantment(enchant, nms)
+                }) as CraftEnchantment
             } else {
                 throw IllegalStateException("Enchantment ${enchant.id} wasn't registered")
             }
@@ -150,7 +162,7 @@ class DefaultModernEnchantmentRegisterer : ModernEnchantmentRegisterer {
         )
 //        return enchantment.build(MinecraftKey.withDefaultNamespace(enchant.id))
         return NMSEnchantment(
-            Aiyatsbus.api().getMinecraftAPI().componentFromJson(enchant.basicData.name) as IChatBaseComponent,
+            CraftChatMessage.fromJSON(enchant.basicData.name) as IChatBaseComponent,
             enchantment.getProperty<NMSEnchantmentC>("definition")!!,
             enchantment.getProperty<HolderSet<NMSEnchantment>>("exclusiveSet")!!,
             enchantment.getProperty<DataComponentMap.a>("effectMapBuilder")!!.build()
